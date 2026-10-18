@@ -1,10 +1,10 @@
-# Greenroom
+# Verso
 
-Greenroom is planned as a headless WordPress content API for a React application. WordPress will provide the editor experience and a custom plugin will shape and secure the REST API; the public site will be served by the React application.
+Verso is planned as a headless WordPress content API for a React application. WordPress will provide the editor experience and a custom plugin will shape and secure the REST API; the public site will be served by the React application.
 
 ## Project status
 
-This repository is at the planning stage. [ADR-0001](ADR.md) records the proposed architecture and its open questions. The decision is still marked **Proposed**, and the implementation has not been scaffolded yet.
+The WordPress plugin skeleton is in place. [ADR-0001](ADR.md) records the proposed architecture and its open questions. The decision is still marked **Proposed**; the API, settings, CORS, and front-end behavior have not been implemented.
 
 ## Engineering workflow
 
@@ -22,7 +22,11 @@ See [ADR-0001](ADR.md) for the proposed v1 scope, trade-offs, risks, and unresol
 
 ## Development
 
-There are no application source files or setup commands in this repository yet. Once implementation is tracked and scaffolded, document prerequisites, local setup, configuration, and verification commands here. Do not infer deployment settings or credentials from the architecture proposal.
+From the repository root, run `npx @wordpress/env start` to start the local WordPress environment. The Verso plugin is mounted from this repository and is available at [http://localhost:8888](http://localhost:8888). Stop the environment with `npx @wordpress/env stop`.
+
+The environment uses [`wp-env`](https://developer.wordpress.org/block-editor/reference-guides/packages/packages-env/), configured in `.wp-env.json`.
+
+The plugin entry point is `verso.php`. Do not infer deployment settings or credentials from the architecture proposal.
 
 ## License
 
