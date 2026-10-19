@@ -1,6 +1,6 @@
 # Verso
 
-Verso is planned as a reusable WordPress plugin for repeatable content transfer and static content export. The same plugin can run on an existing WordPress source and a new destination install. The destination remains the editor experience, while a frontend such as a compiled React application consumes generated static files.
+Verso is planned as a reusable WordPress plugin for repeatable content transfer and static content export. The same plugin can run on an existing WordPress source and a new destination install. The source is authoritative for synced content, so later imports overwrite destination edits to those records. A frontend such as a compiled React application consumes generated static files.
 
 ## Project status
 
@@ -15,11 +15,11 @@ Repository-specific agent guidance is in [AGENTS.md](AGENTS.md). Record durable 
 ## Planned architecture
 
 - Install the same Verso plugin on source and destination WordPress sites: the source exports content and the destination imports it.
-- Export supported pages, posts, media, categories/tags, custom post types, and fields as static JSON files with an index. User accounts, comments, menus, and other data are out of scope unless added later.
-- Imports are repeatable and update matching destination records from the latest source version. The plugin asks for confirmation before deleting destination records whose source records were deleted.
-- An administrator requests exports from the plugin page. Exports containing draft or private records require a password and are encrypted; an export without a password is public and must contain only published public content.
-- The frontend consumes generated static files rather than relying on a custom content REST API for v1. How authorized users preview or consume private content in a browser remains open; a browser cannot keep a decryption password secret.
-- Target the current stable WordPress release and subsequent releases, with PHP newer than 8.0, and avoid provider-specific hosting assumptions. The exact tested version matrix is still to be established.
+- Export selected pages, posts, media, categories/tags, custom post types, and fields as complete static JSON snapshots with an index. Drafts and source-trash records are omitted; users, comments, menus, and other data are out of scope unless added later.
+- Imports are repeatable and source-authoritative: they overwrite destination edits to matching records and delete destination records missing from a valid full snapshot. Restored source content returns in a later snapshot.
+- Exports containing private or password-protected records require the password saved in WordPress settings and encrypted output. An unencrypted index masks private titles, slugs, record details, and counts. Password-free exports contain only public published content.
+- Manual export and both WordPress cron and protected HTTP-trigger automation are planned. Static files reflect the last completed export; a custom content REST API and automatic regeneration on each edit are outside the current scope.
+- Front-end blocking, CORS, and core REST API lockdown are deferred. The exact PHP minimum and tested WordPress/PHP matrix remain to be established.
 
 See [ADR-0001](ADR.md) for the proposed v1 scope, trade-offs, risks, and unresolved questions. [Content transfer](docs/content-transfer.md) describes the planned export/import workflow.
 
