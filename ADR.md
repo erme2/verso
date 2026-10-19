@@ -1,75 +1,89 @@
-# ADR-0001: Use WordPress as a headless REST API service, configured by a custom plugin
+# ADR-0001: Build a reusable WordPress content transfer and static export plugin
 
 - **Status:** Proposed
 - **Date:** 2026-10-18
+- **Updated:** 2026-10-19
 - **Deciders:** TBD
 
 ## Context
 
-We want to use a WordPress install purely as a content/data backend for a rebuilt public website such as birralafortezza.com. The current site's content should be importable into a new WordPress install, which will later serve as a private or restricted REST API backend for the rebuilt website. Editors should manage content in wp-admin, and the public should never see or use WordPress's theme output.
+Verso is intended to become a reusable plugin suitable for publication on WordPress.org. The same plugin should be installable on an existing WordPress site and a new WordPress install used to rebuild its frontend. Birra La Fortezza can serve as one pilot, alongside a more standard example site.
 
-Making WordPress behave well in this role requires a number of adjustments (importing existing content, hiding the front end, locking down and shaping the REST API, CORS, caching, auth). We want these applied consistently and repeatably, rather than as ad hoc edits to `functions.php` or a pile of third-party plugins.
+The plugin will transfer content between WordPress sites and generate static files for a frontend, including a compiled React application. The WordPress theme must not become the public site as a side effect. The new install will remain manageable through wp-admin and should work on standard WordPress hosting rather than depending on a particular provider.
 
 ## Decision
 
-We will run WordPress as a headless REST API service and build a **custom WordPress plugin** that applies all the required configuration. The React app will consume the API from the browser (or from a server-side layer if we later need the API URL hidden).
+We propose building a reusable WordPress plugin that supports repeatable import and static export. The frontend will consume generated static files; a custom content REST API is not part of the current v1 direction.
 
-### Plugin responsibilities (v1 scope)
+### Content scope
 
-1. **Settings page** in wp-admin: allowed origin(s), optional API key, which post types to expose, cache lifetime.
-2. **Front-end blocking:** redirect (or return 404/403 for) all theme/front-end requests to the real site URL. Exempt `wp-admin`, `wp-login.php`, REST requests, Ajax and cron.
-3. **CORS:** send `Access-Control-Allow-Origin` for the configured origin only, and handle preflight `OPTIONS` requests.
-4. **Content import:** provide an administrative import workflow to migrate existing content from another WordPress site into the headless install, including supported media and content relationships. The importer must not be exposed as a public API operation.
-5. **Custom REST namespace** (e.g. `/wp-json/myapp/v1/...`) returning the exact shape React needs, with a `permission_callback` on every route.
-6. **Content modelling:** register custom post types, taxonomies and meta with `show_in_rest` so data is edited in wp-admin and read by React.
-7. **Caching:** set `Cache-Control`/ETag headers; optionally cache responses in transients and invalidate on `save_post` so data stays fresh.
-8. **Reduce API surface:** disable core routes we don't need (users, comments, oEmbed) to limit exposure and prevent user enumeration.
-9. **Auth for non-public data:** Application Passwords (built into WordPress) or a simple API key checked in the permission callback. Public read-only endpoints need none.
+Import and export will support:
+
+- Pages and posts, including draft and private records.
+- Media and its content relationships.
+- Categories and tags.
+- Configured custom post types and their fields.
+
+Users, comments, navigation menus, and other unmentioned data are out of scope unless a later decision adds them.
+
+### Export
+
+- An administrator can request an export from a plugin page.
+- The output is a set of static JSON files with an index file describing the package and its format version.
+- Generated files are managed by the plugin, not placed in a fake theme.
+- If the export includes drafts or private records, a password is required and the package is encrypted. An export containing only public published records may be generated without a password and is public.
+- The files can be downloaded or published for the frontend to consume. Frontend handling of private data remains unresolved; a browser application cannot keep a decryption password secret.
+- Support automated export through both WordPress cron and a protected HTTP trigger for external cron services. The trigger credential is separate from the export-encryption password and must not be sent in a query string or written to logs.
+
+### Import
+
+- The same Verso plugin can be installed on the source WordPress site to export content and on the destination site to import it.
+- Imports are repeatable. Each exported record has a stable source identity so a later import updates the matching destination record with the latest source content rather than creating a duplicate.
+- The source is authoritative for records that match. If a source record has been deleted, the importer presents that proposed deletion and requires explicit confirmation before deleting its destination copy.
+- The import workflow reports unsupported content and failures clearly.
+
+### Compatibility and hosting
+
+- Target the current stable WordPress release and subsequent releases.
+- Require PHP newer than 8.0 (PHP 8.1 or newer); establish and test the exact compatibility matrix during implementation.
+- Avoid provider-specific hosting assumptions and runtime dependencies beyond what standard WordPress hosting supports.
 
 ## Options considered
 
 | Option | Notes |
 | --- | --- |
-| **Custom plugin (chosen)** | Repeatable, versioned, one place for all headless config; full control over endpoint shape. Cost: we build and maintain it. |
-| Edits in theme `functions.php` | Quick, but tied to the theme, easy to lose, not portable. |
-| Existing headless/security plugins | Less code to write, but multiple plugins to configure, less control over response shape, and extra dependencies. |
-| Skip WordPress (use a dedicated headless CMS or custom backend) | Cleaner fit for headless, but loses the familiar editor experience and existing install. Not pursued for now. |
+| **Reusable WordPress plugin (proposed)** | Install the same plugin on source and destination sites; provides an admin workflow and a versioned content format. |
+| Store generated exports in a theme | Rejected as a storage mechanism because themes are presentation code and can be replaced or updated independently of plugin data. |
+| Custom content REST API for the frontend | Deferred. Static files are the chosen v1 frontend delivery path; a future requirement may justify a REST API. |
 
 ## Consequences
 
 ### Positive
 
-- Editors keep the familiar WordPress admin; React gets clean, purpose-built JSON.
-- All headless configuration lives in one versioned plugin that can be deployed to any install.
-- Caching and a restricted API surface improve performance and reduce exposure.
-- Existing WordPress content can be migrated into the headless install instead of requiring a blank-slate rebuild.
+- The frontend can consume static content without depending on live WordPress requests.
+- The same repeatable transfer workflow can support Birra La Fortezza and other WordPress sites.
+- Source identities let operators refresh imported records while requiring confirmation for source deletions.
 
 ### Negative / risks
 
-- **"Hidden" is relative.** If React calls the API from the browser, the URL is visible in the network tab. We can make it obscure and restricted, but not secret. If it must be truly hidden, a server-side proxy layer (e.g. Next.js/Node) should call WordPress instead.
-- **Origin checks are not security.** Non-browser clients can spoof the `Origin` header. Real protection for non-public data comes from a key or token, and any key shipped in client-side JS is effectively public.
-- **Admin must keep working.** The front-end block must not interfere with wp-admin, login, Ajax or cron.
-- **Page-cache and security plugins** may interfere with REST headers or CORS and need testing.
-- **Previews** of unpublished content need extra handling in a headless setup.
-- **Imports need a defined source and migration contract.** WordPress sites can differ in post types, metadata, plugins, media storage, and URL structure; unsupported data or collisions could otherwise be silently lost or duplicated.
-- We take on ongoing maintenance of the plugin and compatibility with WordPress core updates.
+- A static export containing private or draft records must be protected as an encrypted package; anyone with the password can decrypt it.
+- A compiled browser frontend cannot safely hold the package password. The way authorized editors preview or consume private content is not decided here.
+- Public, password-free exports are publicly accessible and must contain only published public content.
+- WordPress sites can differ in custom fields, plugin data, media storage, and relationships; unsupported data must not be silently lost.
+- Optional S3 delivery is tracked separately and must not make exported objects public implicitly.
+- We take on ongoing maintenance of the plugin and compatibility with WordPress core updates and standard hosting environments.
 
 ## Open questions
 
-- What data is being served (posts, a custom post type, something else)?
-- Is the data public, or does some of it require authentication?
-- Does React run purely in the browser, or is there a server component that could proxy requests?
-- Will WordPress live on a separate subdomain (e.g. `cms.yourdomain.com`)?
-- Which hosting and caching setup will be used?
-- How will the existing birralafortezza WordPress content be supplied (WordPress export, authenticated REST API, or another supported source), and is import a one-time migration or a repeatable sync?
-- Which source post types, taxonomies, custom fields, media, and relationships must be preserved, and how should duplicate/conflicting content be handled?
-- Should imported media be copied into the new install, and how should old URLs and internal links be rewritten for the rebuilt site?
-- What review or dry-run behavior is required before imported content becomes available through the restricted API?
+- How will editors preview draft/private content in the rebuilt frontend without exposing the decryption password to browsers?
+- Which exact WordPress and PHP versions will the implementation test in CI?
+- What are the final package layout and media URL conventions for static frontend consumption?
+- What source-specific field mappings, if any, will the Birra La Fortezza pilot require?
 
 ## Next steps
 
-1. Answer the open questions above and update this ADR to **Accepted**.
-2. Define the supported WordPress import format and migration behavior, then implement an administrator-only importer with validation and safe conflict handling.
-3. Scaffold the plugin (`wp-content/plugins/<plugin-name>/`) with the settings page, front-end block and CORS.
-4. Add the custom namespace, first endpoints and caching.
-5. Test the import against a representative copy of the existing site, then test the React API flow, preflight requests, cache invalidation and wp-admin access.
+1. Resolve the open questions that block a safe package and operator workflow; then update this ADR to **Accepted**.
+2. Specify the versioned JSON/index format and implement manual export and repeatable import with focused tests.
+3. Add the static-file consumption guidance for the frontend and document password handling and source-deletion confirmation.
+4. Test transfers using synthetic WordPress fixtures before any real-site migration.
+5. Evaluate optional automation and S3 delivery as separate scoped work.
